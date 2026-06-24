@@ -1,0 +1,188 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // ===============================================================
+    // Assumed Data Model
+    // ===============================================================
+    //
+    // Collection: users
+    // Document ID: {uid}
+    // Fields:
+    //   - uid: string (required)
+    //   - role: string (required, 'player' or 'manager')
+    //   - displayName: string (required)
+    //   - photoURL: string (optional)
+    //   - playerProfile: map (optional)
+    //   - createdAt: timestamp (required)
+    //
+    // Collection: users/{uid}/private/data
+    // Document ID: data
+    // Fields:
+    //   - email: string (required)
+    //   - balance: number (required)
+    //
+    // Collection: teams
+    // Document ID: {teamId}
+    // Fields:
+    //   - id: string (required)
+    //   - managerUid: string (required)
+    //   - name: string (required)
+    //   - gameFormat: string (required)
+    //   - tournaments: list (optional)
+    //   - reinforcementPositions: list (optional)
+    //   - description: string (optional)
+    //   - createdAt: timestamp (required)
+    //
+    // Collection: contactRequests
+    // Document ID: {requestId}
+    // Fields:
+    //   - id: string (required)
+    //   - fromUid: string (required)
+    //   - toUid: string (required)
+    //   - teamId: string (optional)
+    //   - status: string (required, 'pending', 'accepted', 'rejected')
+    //   - price: number (required)
+    //   - createdAt: timestamp (required)
+    //
+    // Collection: chats/{chatId}/messages
+    // Document ID: {messageId}
+    // Fields:
+    //   - id: string (required)
+    //   - chatId: string (required)
+    //   - senderUid: string (required)
+    //   - text: string (required)
+    //   - createdAt: timestamp (required)
+    //
+    // Collection: transactions
+    // Document ID: {transactionId}
+    // Fields:
+    //   - id: string (required)
+    //   - uid: string (required)
+    //   - amount: number (required)
+    //   - type: string (required, 'topup', 'payment')
+    //   - description: string (optional)
+    //   - createdAt: timestamp (required)
+    //
+    // ===============================================================
+
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+    
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function isAdmin() {
+      return isAuthenticated() && 
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+    }
+
+    function isValidEmail(email) {
+      return email is string && (email == "" || email.matches("^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$"));
+    }
+
+    function isValidUser(data) {
+      return data.keys().hasAll(['uid', 'role', 'displayName', 'createdAt']) &&
+             data.uid == request.auth.uid &&
+             data.role in ['player', 'manager'] &&
+             data.displayName is string && data.displayName.size() > 0 && data.displayName.size() < 100 &&
+             (!('photoURL' in data) || data.photoURL == null || (data.photoURL is string && data.photoURL.size() < 1500000)) &&
+             (!('phoneNumber' in data) || data.phoneNumber == null || (data.phoneNumber is string && data.phoneNumber.size() < 20));
+    }
+
+    function isValidUserPrivate(data) {
+      return data.keys().hasAll(['email', 'balance']) &&
+             isValidEmail(data.email) &&
+             data.balance is number && data.balance >= 0;
+    }
+
+    function isValidTeam(data) {
+      return data.keys().hasAll(['id', 'managerUid', 'name', 'gameFormat', 'createdAt']) &&
+             data.managerUid == request.auth.uid &&
+             data.name is string && data.name.size() > 0 && data.name.size() < 100 &&
+             data.gameFormat is string && data.gameFormat.size() < 20 &&
+             (!('logoURL' in data) || (data.logoURL is string && data.logoURL.size() < 1500000));
+    }
+
+    function isValidContactRequest(data) {
+      return data.keys().hasAll(['id', 'fromUid', 'toUid', 'status', 'price', 'createdAt']) &&
+             data.status in ['pending', 'accepted', 'rejected'] &&
+             data.price is number && data.price >= 0;
+    }
+
+    function isValidMessage(data, chatId) {
+      return data.keys().hasAll(['id', 'chatId', 'senderUid', 'text', 'createdAt']) &&
+             data.chatId == chatId &&
+             data.senderUid == request.auth.uid &&
+             data.text is string && data.text.size() <= 3000;
+    }
+
+    function isChatParticipant(chatId) {
+      let req = get(/databases/$(database)/documents/contactRequests/$(chatId)).data;
+      return req != null && (req.fromUid == request.auth.uid || req.toUid == request.auth.uid);
+    }
+
+    // ===============================================================
+    // Rules
+    // ===============================================================
+
+    match /users/{userId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() && isOwner(userId) && isValidUser(request.resource.data);
+      allow update: if isAuthenticated() && (isOwner(userId) || isAdmin()) && 
+                      isValidUser(request.resource.data) &&
+                      request.resource.data.createdAt == resource.data.createdAt &&
+                      request.resource.data.uid == resource.data.uid;
+
+      match /private/data {
+        allow read: if isAuthenticated() && (isOwner(userId) || isAdmin());
+        allow create: if isOwner(userId) && isValidUserPrivate(request.resource.data) && request.resource.data.balance == 100;
+        allow update: if isAuthenticated() && (
+          (isOwner(userId) && request.resource.data.balance == resource.data.balance) || 
+          isAdmin()
+        ) && isValidUserPrivate(request.resource.data);
+      }
+    }
+
+    match /teams/{teamId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() && isValidTeam(request.resource.data);
+      allow update: if isAuthenticated() && (resource.data.managerUid == request.auth.uid || isAdmin()) && 
+                      isValidTeam(request.resource.data) &&
+                      request.resource.data.createdAt == resource.data.createdAt &&
+                      request.resource.data.id == resource.data.id;
+      allow delete: if isAuthenticated() && (resource.data.managerUid == request.auth.uid || isAdmin());
+    }
+
+    match /contactRequests/{requestId} {
+      allow read: if isAuthenticated() && (resource.data.fromUid == request.auth.uid || resource.data.toUid == request.auth.uid || isAdmin());
+      allow update: if isAuthenticated() && (resource.data.fromUid == request.auth.uid || resource.data.toUid == request.auth.uid || isAdmin());
+      allow delete: if isAuthenticated() && (resource.data.fromUid == request.auth.uid || resource.data.toUid == request.auth.uid || isAdmin());
+    }
+
+    match /chats/{chatId} {
+      allow read, delete: if isAuthenticated() && (chatId.matches('.*' + request.auth.uid + '.*') || isChatParticipant(chatId) || isAdmin());
+      
+      match /messages/{messageId} {
+        allow read: if isAuthenticated() && (chatId.matches('.*' + request.auth.uid + '.*') || isChatParticipant(chatId) || isAdmin());
+        allow create: if isAuthenticated() && (chatId.matches('.*' + request.auth.uid + '.*') || isChatParticipant(chatId) || isAdmin()) && request.resource.data.senderUid == request.auth.uid;
+        allow update, delete: if isAuthenticated() && (resource.data.senderUid == request.auth.uid || isAdmin());
+      }
+    }
+
+    match /transactions/{transactionId} {
+      allow read: if isAuthenticated() && (resource.data.uid == request.auth.uid || isAdmin());
+      allow create: if isAuthenticated() && 
+                    request.resource.data.uid == request.auth.uid &&
+                    request.resource.data.amount == 100 &&
+                    request.resource.data.type == 'topup' &&
+                    request.resource.data.description == 'Приветственный бонус';
+    }
+  }
+}

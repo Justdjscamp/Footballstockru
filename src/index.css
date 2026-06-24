@@ -1,0 +1,117 @@
+@import "tailwindcss";
+
+:root {
+  --background-image: linear-gradient(135deg, #fdfbfb 0%, #ebedee 100%);
+  --bento-bg: rgba(255, 255, 255, 0.6);
+  --bento-border: rgba(255, 255, 255, 0.4);
+  --bento-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.1);
+  --text-primary: #0f172a;
+  --text-secondary: #64748b;
+  --primary: #16a34a;
+  --primary-hover: #15803d;
+}
+
+.dark {
+  --background-image: 
+    radial-gradient(at 0% 0%, hsla(145, 100%, 15%, 0.4) 0, transparent 50%),
+    radial-gradient(at 50% 0%, hsla(158, 100%, 10%, 0.4) 0, transparent 50%),
+    radial-gradient(at 100% 0%, hsla(167, 100%, 10%, 0.4) 0, transparent 50%),
+    linear-gradient(180deg, #020617 0%, #064e3b 100%);
+  --bento-bg: rgba(15, 23, 42, 0.6);
+  --bento-border: rgba(255, 255, 255, 0.1);
+  --bento-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.5);
+  --text-primary: #f8fafc;
+  --text-secondary: #cbd5e1;
+  --primary: #22c55e;
+  --primary-hover: #16a34a;
+}
+
+@theme {
+  --color-primary: var(--primary);
+  --color-primary-hover: var(--primary-hover);
+  --color-text-primary: var(--text-primary);
+  --color-text-secondary: var(--text-secondary);
+}
+
+@layer base {
+  html, body, #root {
+    height: 100%;
+    margin: 0;
+    padding: 0;
+  }
+  body {
+    @apply text-[var(--color-text-primary)] antialiased transition-colors duration-300 min-h-screen overflow-hidden;
+    background: var(--background-image);
+    background-attachment: fixed;
+    background-size: cover;
+  }
+
+  /* Custom Scrollbar */
+  ::-webkit-scrollbar {
+    width: 6px;
+  }
+  ::-webkit-scrollbar-track {
+    @apply bg-transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    @apply bg-green-500/30 rounded-full hover:bg-green-500/50 transition-colors;
+  }
+}
+
+/* Bento Glassmorphism Base Class */
+.bento-glass {
+  background: var(--bento-bg);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid var(--bento-border);
+  box-shadow: var(--bento-shadow);
+  @apply rounded-3xl overflow-hidden transition-all duration-300;
+}
+
+.bento-hover:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 12px 40px 0 rgba(0, 0, 0, 0.45);
+  border-color: rgba(255, 255, 255, 0.15);
+}
+
+/* Inputs and Forms in Bento */
+@layer components {
+  .bento-input {
+    @apply w-full bg-black/5 dark:bg-white/5 border border-black/5 dark:border-white/5 text-[var(--color-text-primary)] rounded-2xl px-5 py-4 outline-none focus:ring-2 focus:ring-primary/50 focus:bg-black/10 dark:focus:bg-white/10 transition-all placeholder:text-[var(--color-text-secondary)] font-medium;
+  }
+  .bento-button {
+    @apply w-full bg-primary text-white py-4 px-6 rounded-2xl font-bold hover:bg-primary-hover focus:ring-2 focus:ring-primary/50 focus:ring-offset-2 focus:ring-offset-transparent transition-all active:scale-95 disabled:opacity-50 flex items-center justify-center gap-2 shadow-lg shadow-primary/20 backdrop-blur-md;
+  }
+  .bento-button-secondary {
+    @apply w-full bg-white/10 dark:bg-white/5 text-[var(--color-text-primary)] border border-white/20 dark:border-white/10 py-4 px-6 rounded-2xl font-bold hover:bg-white/20 dark:hover:bg-white/10 transition-all active:scale-95 disabled:opacity-50 flex items-center justify-center gap-2 backdrop-blur-md;
+  }
+}
+
+/* FIFO Card Styles */
+.fifa-card {
+  position: relative;
+  background: linear-gradient(135deg, rgba(20, 40, 20, 0.8) 0%, rgba(5, 10, 5, 0.9) 100%);
+  border: 1px solid rgba(34, 197, 94, 0.5);
+  clip-path: polygon(0% 12%, 12% 0%, 88% 0%, 100% 12%, 100% 88%, 88% 100%, 12% 100%, 0% 88%);
+  overflow: hidden;
+  backdrop-filter: blur(10px);
+}
+
+.fifa-card::before {
+  content: '';
+  position: absolute;
+  top: -50%;
+  left: -50%;
+  width: 200%;
+  height: 200%;
+  background: radial-gradient(circle, rgba(34, 197, 94, 0.15) 0%, transparent 60%);
+  pointer-events: none;
+}
+
+.fifa-stat-label {
+  @apply text-[10px] uppercase tracking-widest text-[#94a3b8] font-bold;
+}
+
+.fifa-stat-value {
+  @apply text-lg font-black leading-none text-white;
+}

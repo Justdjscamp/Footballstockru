@@ -1,0 +1,9 @@
+{
+  "name": "Remix: Football Stock",
+  "description": "Платформа для поиска футболистов и команд. Регистрация игроков и менеджеров, фильтрация по параметрам, система платных контактов и чат.",
+  "requestFramePermissions": [
+    "camera",
+    "microphone",
+    "geolocation"
+  ]
+}

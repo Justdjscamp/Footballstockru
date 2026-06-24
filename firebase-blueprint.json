@@ -1,0 +1,102 @@
+{
+  "entities": {
+    "User": {
+      "title": "User Public Profile",
+      "description": "Publicly visible profile for both players and managers.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "description": "Firebase Auth UID" },
+        "role": { "type": "string", "enum": ["player", "manager"], "description": "User role" },
+        "displayName": { "type": "string", "description": "Full name" },
+        "photoURL": { "type": "string", "description": "Profile picture URL" },
+        "playerProfile": {
+          "type": "object",
+          "properties": {
+            "position": { "type": "string", "description": "Field position" },
+            "gameFormat": { "type": "string", "description": "Preferred game format (e.g., 5x5, 11x11)" },
+            "metroStations": { "type": "array", "items": { "type": "string" }, "description": "Nearby metro stations" },
+            "experience": { "type": "string", "description": "Football experience description" }
+          }
+        },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "role", "displayName"]
+    },
+    "UserPrivate": {
+      "title": "User Private Data",
+      "description": "Sensitive data visible only to the owner.",
+      "type": "object",
+      "properties": {
+        "email": { "type": "string", "format": "email" },
+        "balance": { "type": "number", "description": "User's virtual balance in RUB" }
+      },
+      "required": ["email", "balance"]
+    },
+    "Team": {
+      "title": "Team Profile",
+      "description": "Profile for a football team managed by a manager.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "managerUid": { "type": "string" },
+        "name": { "type": "string" },
+        "gameFormat": { "type": "string" },
+        "tournaments": { "type": "array", "items": { "type": "string" } },
+        "reinforcementPositions": { "type": "array", "items": { "type": "string" }, "description": "Positions needed to strengthen the team" },
+        "description": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "managerUid", "name", "gameFormat"]
+    },
+    "ContactRequest": {
+      "title": "Contact Request",
+      "description": "Request to exchange contacts between a player and a manager/team.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "fromUid": { "type": "string" },
+        "toUid": { "type": "string" },
+        "teamId": { "type": "string", "description": "Optional, if request is for a specific team" },
+        "status": { "type": "string", "enum": ["pending", "accepted", "rejected"], "description": "Request status" },
+        "price": { "type": "number", "description": "Cost of the contact" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "fromUid", "toUid", "status", "price"]
+    },
+    "Message": {
+      "title": "Chat Message",
+      "description": "Messages exchanged after a contact request is accepted.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "chatId": { "type": "string", "description": "Combination of two UIDs strictly formed as uid1_uid2" },
+        "senderUid": { "type": "string" },
+        "text": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "chatId", "senderUid", "text"]
+    },
+    "Transaction": {
+      "title": "Balance Transaction",
+      "description": "Record of balance changes (top-ups or contact payments).",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "uid": { "type": "string" },
+        "amount": { "type": "number" },
+        "type": { "type": "string", "enum": ["topup", "payment"] },
+        "description": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "uid", "amount", "type"]
+    }
+  },
+  "firestore": {
+    "/users/{uid}": { "schema": "User", "description": "Public user profiles" },
+    "/users/{uid}/private/data": { "schema": "UserPrivate", "description": "Sensitive user data" },
+    "/teams/{teamId}": { "schema": "Team", "description": "Team profiles" },
+    "/contactRequests/{requestId}": { "schema": "ContactRequest", "description": "Contact exchange requests" },
+    "/chats/{chatId}/messages/{messageId}": { "schema": "Message", "description": "Chat messages" },
+    "/transactions/{transactionId}": { "schema": "Transaction", "description": "Financial records" }
+  }
+}
