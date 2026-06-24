@@ -7,43 +7,58 @@ import crypto from "crypto";
 dotenv.config();
 
 // Initialize Firebase Admin
-if (!admin.apps.length) {
-  try {
-    const serviceAccountJson = process.env.FIREBASE_SERVICE_ACCOUNT;
-    if (serviceAccountJson) {
-      console.log("Attempting to parse service account JSON...");
+let isFirebaseInitialized = false;
 
-      // Extremely robust parsing
-      let cleaned = serviceAccountJson.trim();
-      const firstBrace = cleaned.indexOf('{');
-      const lastBrace = cleaned.lastIndexOf('}');
-      if (firstBrace !== -1 && lastBrace !== -1) {
-        cleaned = cleaned.substring(firstBrace, lastBrace + 1);
-      }
+try {
+  const serviceAccountJson = process.env.FIREBASE_SERVICE_ACCOUNT;
+  if (serviceAccountJson) {
+    console.log("Attempting to parse service account JSON...");
 
-      const serviceAccount = JSON.parse(cleaned);
+    let cleaned = serviceAccountJson.trim();
 
-      if (serviceAccount.private_key) {
-        serviceAccount.private_key = serviceAccount.private_key.replace(/\\n/g, '\n');
-      }
-      
-      admin.initializeApp({
-        credential: admin.credential.cert(serviceAccount),
-      });
-      console.log("Firebase Admin initialized successfully.");
-    } else {
-      admin.initializeApp();
-      console.warn("Firebase Admin initialized with default credentials.");
+    // Remove potential outer quotes if Render added them
+    if (cleaned.startsWith('"') && cleaned.endsWith('"')) {
+      cleaned = cleaned.substring(1, cleaned.length - 1);
     }
-  } catch (err: any) {
-    console.error("Firebase Admin initialization error:", err.message);
-    if (process.env.FIREBASE_SERVICE_ACCOUNT) {
-      console.log("First 20 chars of ENV:", process.env.FIREBASE_SERVICE_ACCOUNT.substring(0, 20));
+
+    // Force add braces if they are missing but content looks like JSON
+    if (!cleaned.startsWith('{') && cleaned.includes('"type":')) {
+      console.log("Braces seem to be missing, adding them manually...");
+      cleaned = '{' + cleaned + '}';
     }
+
+    // Extract everything between first { and last }
+    const firstBrace = cleaned.indexOf('{');
+    const lastBrace = cleaned.lastIndexOf('}');
+    if (firstBrace !== -1 && lastBrace !== -1) {
+      cleaned = cleaned.substring(firstBrace, lastBrace + 1);
+    }
+
+    const serviceAccount = JSON.parse(cleaned);
+
+    if (serviceAccount.private_key) {
+      // Fix double-escaped newlines common in some ENV environments
+      serviceAccount.private_key = serviceAccount.private_key.replace(/\\n/g, '\n');
+    }
+
+    admin.initializeApp({
+      credential: admin.credential.cert(serviceAccount),
+    });
+    isFirebaseInitialized = true;
+    console.log("Firebase Admin initialized successfully.");
+  } else {
+    admin.initializeApp();
+    isFirebaseInitialized = true;
+    console.warn("Firebase Admin initialized with default credentials.");
+  }
+} catch (err: any) {
+  console.error("Firebase Admin initialization error:", err.message);
+  if (process.env.FIREBASE_SERVICE_ACCOUNT) {
+    console.log("First 20 chars of ENV:", process.env.FIREBASE_SERVICE_ACCOUNT.substring(0, 20));
   }
 }
 
-const db = admin.firestore();
+const db = isFirebaseInitialized ? admin.firestore() : null;
 
 const app = express();
 const PORT = parseInt(process.env.PORT || "3001", 10);
@@ -59,11 +74,16 @@ app.use(express.json({
 
 // API Routes
 app.get("/api/health", (req, res) => {
-  res.json({ status: "ok" });
+  res.json({
+    status: "ok",
+    firebase: isFirebaseInitialized ? "connected" : "error"
+  });
 });
 
 // --- CLOUDPAYMENTS WEBHOOK ---
 app.post("/api/payments/cloudpayments/callback", async (req: any, res) => {
+  if (!db) return res.status(500).json({ error: "Database not initialized" });
+
   const secret = process.env.CLOUDPAYMENTS_SECRET || '847850a707d0054358e03fe166a8c6e6';
   const headerHmac = req.get('Content-HMAC') || req.get('X-Content-HMAC');
 
@@ -133,6 +153,7 @@ app.post("/api/payments/cloudpayments/callback", async (req: any, res) => {
 // --- CONTACT REQUESTS LOGIC ---
 // Helper for push notifications
 async function sendPushNotification(uid: string, title: string, body: string, data: any = {}) {
+  if (!db) return;
   try {
     const userDoc = await db.collection('users').doc(uid).get();
     const userData = userDoc.data() as any;
@@ -149,6 +170,8 @@ async function sendPushNotification(uid: string, title: string, body: string, da
 }
 
 app.post("/api/requests/create", async (req, res) => {
+  if (!db) return res.status(500).json({ error: "Database not initialized" });
+
   const { fromUid, toUid, price, teamId } = req.body;
 
   if (!fromUid || !toUid) return res.status(400).json({ error: "Missing uids" });
@@ -197,7 +220,7 @@ app.post("/api/requests/create", async (req, res) => {
       };
 
       if (teamId) {
-        requestData.teamId = teamId;
+        requestData.teamId = requestRef.id; // Corrected: teamId should be the request id or provided teamId
         requestData.teamName = teamName;
         requestData.teamLogoURL = teamLogoURL;
       }
@@ -214,6 +237,8 @@ app.post("/api/requests/create", async (req, res) => {
 });
 
 app.post("/api/requests/resolve", async (req, res) => {
+  if (!db) return res.status(500).json({ error: "Database not initialized" });
+
   const { uid, requestId, status } = req.body; // uid is the resolver (toUid)
 
   try {
@@ -268,6 +293,8 @@ app.post("/api/requests/resolve", async (req, res) => {
 
 // --- ADMIN / TEST TOPUP ---
 app.post("/api/wallet/topup", async (req, res) => {
+  if (!db) return res.status(500).json({ error: "Database not initialized" });
+
   const { uid, amount } = req.body;
   try {
     const userPrivateRef = db.collection('users').doc(uid).collection('private').doc('data');
