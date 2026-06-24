@@ -11,7 +11,16 @@ if (!admin.apps.length) {
   try {
     const serviceAccountJson = process.env.FIREBASE_SERVICE_ACCOUNT;
     if (serviceAccountJson) {
-      const serviceAccount = JSON.parse(serviceAccountJson);
+      let serviceAccount;
+
+      // Handle case where it might be already an object or a string
+      if (typeof serviceAccountJson === 'string') {
+        // Clean the string from potential outer quotes if it was pasted as " {...} "
+        const cleanedJson = serviceAccountJson.trim().replace(/^"(.*)"$/, '$1').replace(/\\"/g, '"');
+        serviceAccount = JSON.parse(cleanedJson);
+      } else {
+        serviceAccount = serviceAccountJson;
+      }
       
       if (serviceAccount.private_key) {
         serviceAccount.private_key = serviceAccount.private_key.replace(/\\n/g, '\n');
@@ -26,7 +35,7 @@ if (!admin.apps.length) {
       console.warn("Firebase Admin initialized with default credentials.");
     }
   } catch (err) {
-    console.error("Firebase Admin initialization error", err);
+    console.error("Firebase Admin initialization error:", err);
   }
 }
 
