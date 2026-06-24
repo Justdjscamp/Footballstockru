@@ -1,4 +1,4 @@
-const API_BASE_URL = 'http://localhost:3001/api'; // Replace with Render URL after deploy
+const API_BASE_URL = 'https://footballstockru.onrender.com/api';
 
 export const apiCall = async (endpoint: string, method: string, body?: any) => {
   const response = await fetch(`${API_BASE_URL}${endpoint}`, {
