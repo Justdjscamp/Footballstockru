@@ -11,17 +11,18 @@ if (!admin.apps.length) {
   try {
     const serviceAccountJson = process.env.FIREBASE_SERVICE_ACCOUNT;
     if (serviceAccountJson) {
-      let serviceAccount;
+      console.log("Attempting to parse service account JSON...");
 
-      // Handle case where it might be already an object or a string
-      if (typeof serviceAccountJson === 'string') {
-        // Clean the string from potential outer quotes if it was pasted as " {...} "
-        const cleanedJson = serviceAccountJson.trim().replace(/^"(.*)"$/, '$1').replace(/\\"/g, '"');
-        serviceAccount = JSON.parse(cleanedJson);
-      } else {
-        serviceAccount = serviceAccountJson;
+      // Extremely robust parsing
+      let cleaned = serviceAccountJson.trim();
+      const firstBrace = cleaned.indexOf('{');
+      const lastBrace = cleaned.lastIndexOf('}');
+      if (firstBrace !== -1 && lastBrace !== -1) {
+        cleaned = cleaned.substring(firstBrace, lastBrace + 1);
       }
-      
+
+      const serviceAccount = JSON.parse(cleaned);
+
       if (serviceAccount.private_key) {
         serviceAccount.private_key = serviceAccount.private_key.replace(/\\n/g, '\n');
       }
@@ -29,13 +30,16 @@ if (!admin.apps.length) {
       admin.initializeApp({
         credential: admin.credential.cert(serviceAccount),
       });
-      console.log("Firebase Admin initialized via service account JSON.");
+      console.log("Firebase Admin initialized successfully.");
     } else {
       admin.initializeApp();
       console.warn("Firebase Admin initialized with default credentials.");
     }
-  } catch (err) {
-    console.error("Firebase Admin initialization error:", err);
+  } catch (err: any) {
+    console.error("Firebase Admin initialization error:", err.message);
+    if (process.env.FIREBASE_SERVICE_ACCOUNT) {
+      console.log("First 20 chars of ENV:", process.env.FIREBASE_SERVICE_ACCOUNT.substring(0, 20));
+    }
   }
 }
 
