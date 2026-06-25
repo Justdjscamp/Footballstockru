@@ -80,6 +80,182 @@ app.get("/api/health", (req, res) => {
   });
 });
 
+// OAuth Public Config Endpoint
+app.get("/api/auth/config", (req, res) => {
+  res.json({
+    vkClientId: process.env.VK_CLIENT_ID || "",
+    yandexClientId: process.env.YANDEX_CLIENT_ID || ""
+  });
+});
+
+// OAuth Callback Endpoint
+app.post("/api/auth/callback", async (req, res) => {
+  const { provider, code, redirectUri } = req.body;
+
+  if (!provider || !code) {
+    return res.status(400).json({ error: "Missing provider or code" });
+  }
+
+  try {
+    let uid = "";
+    let displayName = "";
+    let photoURL = "";
+    let email = "";
+
+    if (provider === "yandex") {
+      const clientId = process.env.YANDEX_CLIENT_ID;
+      const clientSecret = process.env.YANDEX_CLIENT_SECRET;
+
+      if (!clientId || !clientSecret) {
+        throw new Error("Yandex credentials are not configured on server.");
+      }
+
+      // Exchange code for token
+      const tokenResponse = await fetch("https://oauth.yandex.ru/token", {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: new URLSearchParams({
+          grant_type: "authorization_code",
+          code,
+          client_id: clientId,
+          client_secret: clientSecret,
+        }).toString(),
+      });
+
+      if (!tokenResponse.ok) {
+        const errText = await tokenResponse.text();
+        console.error("Yandex token exchange error response:", errText);
+        throw new Error(`Failed to exchange Yandex code: ${tokenResponse.statusText}`);
+      }
+
+      const tokenData = await tokenResponse.json() as { access_token: string };
+      const accessToken = tokenData.access_token;
+
+      // Fetch user info
+      const infoResponse = await fetch("https://login.yandex.ru/info?format=json", {
+        headers: { Authorization: `OAuth ${accessToken}` },
+      });
+
+      if (!infoResponse.ok) {
+        throw new Error(`Failed to fetch Yandex user info: ${infoResponse.statusText}`);
+      }
+
+      const infoData = await infoResponse.json() as {
+        id: string;
+        real_name?: string;
+        display_name?: string;
+        default_email?: string;
+        default_avatar_id?: string;
+        is_avatar_empty?: boolean;
+      };
+
+      uid = `yandex:${infoData.id}`;
+      displayName = infoData.real_name || infoData.display_name || "Yandex User";
+      email = infoData.default_email || "";
+      if (infoData.default_avatar_id && !infoData.is_avatar_empty) {
+        photoURL = `https://avatars.yandex.net/get-yapic/${infoData.default_avatar_id}/islands-200`;
+      }
+    } else if (provider === "vk") {
+      const clientId = process.env.VK_CLIENT_ID;
+      const clientSecret = process.env.VK_CLIENT_SECRET;
+
+      if (!clientId || !clientSecret) {
+        throw new Error("VK credentials are not configured on server.");
+      }
+
+      // Exchange code for token
+      const tokenResponse = await fetch("https://oauth.vk.com/access_token", {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: new URLSearchParams({
+          client_id: clientId,
+          client_secret: clientSecret,
+          redirect_uri: redirectUri,
+          code,
+        }).toString(),
+      });
+
+      if (!tokenResponse.ok) {
+        const errText = await tokenResponse.text();
+        console.error("VK token exchange error response:", errText);
+        throw new Error(`Failed to exchange VK code: ${tokenResponse.statusText}`);
+      }
+
+      const tokenData = await tokenResponse.json() as {
+        access_token: string;
+        user_id: number;
+        email?: string;
+      };
+      const accessToken = tokenData.access_token;
+      const vkUserId = tokenData.user_id;
+      email = tokenData.email || "";
+
+      // Fetch user info
+      const infoResponse = await fetch(
+        `https://api.vk.com/method/users.get?user_ids=${vkUserId}&fields=photo_200,first_name,last_name&access_token=${accessToken}&v=5.131`
+      );
+
+      if (!infoResponse.ok) {
+        throw new Error(`Failed to fetch VK user info: ${infoResponse.statusText}`);
+      }
+
+      const infoData = await infoResponse.json() as {
+        response?: {
+          id: number;
+          first_name: string;
+          last_name: string;
+          photo_200?: string;
+        }[];
+      };
+
+      const vkUser = infoData.response?.[0];
+      if (!vkUser) {
+        throw new Error("VK user info response was empty");
+      }
+
+      uid = `vk:${vkUser.id}`;
+      displayName = `${vkUser.first_name} ${vkUser.last_name}`.trim();
+      photoURL = vkUser.photo_200 || "";
+    } else {
+      return res.status(400).json({ error: "Unsupported provider" });
+    }
+
+    // Check if Firebase Auth user exists, otherwise create them
+    let firebaseUser;
+    try {
+      firebaseUser = await admin.auth().getUser(uid);
+
+      // Update properties if changed
+      const updateData: any = {};
+      if (displayName && firebaseUser.displayName !== displayName) updateData.displayName = displayName;
+      if (photoURL && firebaseUser.photoURL !== photoURL) updateData.photoURL = photoURL;
+      if (email && firebaseUser.email !== email) updateData.email = email;
+
+      if (Object.keys(updateData).length > 0) {
+        firebaseUser = await admin.auth().updateUser(uid, updateData);
+      }
+    } catch (e: any) {
+      if (e.code === "auth/user-not-found") {
+        firebaseUser = await admin.auth().createUser({
+          uid,
+          displayName,
+          photoURL: photoURL || undefined,
+          email: email || undefined,
+        });
+      } else {
+        throw e;
+      }
+    }
+
+    // Generate Custom Token
+    const customToken = await admin.auth().createCustomToken(uid);
+    res.json({ customToken, user: firebaseUser });
+  } catch (err: any) {
+    console.error(`OAuth callback failed for provider ${provider}:`, err);
+    res.status(500).json({ error: err.message || "OAuth exchange failed" });
+  }
+});
+
 // --- CLOUDPAYMENTS WEBHOOK ---
 app.post("/api/payments/cloudpayments/callback", async (req: any, res) => {
   if (!db) return res.status(500).json({ error: "Database not initialized" });
